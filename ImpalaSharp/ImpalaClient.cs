@@ -64,6 +64,10 @@ namespace ImpalaSharp
             this.FetchSize = 1024;
         }
 
+        public QueryResult<bool> Execute(string q) {
+            return this.ExecuteInternal(q, new Dictionary<string, string>());
+        }
+
         /// <summary>
         /// Run query and handle results using SimpleResultHandler().
         /// </summary>
@@ -202,6 +206,28 @@ namespace ImpalaSharp
             }
         }
 
+        private QueryResult<bool> ExecuteInternal(string q, Dictionary<string, string> conf) {
+            var sw = Stopwatch.StartNew();
+
+            using (var qh = this.CreateExecuteHandle(q, conf))
+            using (var cleaning = new DisposableAction(() => { this.currentQuery = null; }))
+            {
+                this.currentQuery = qh;
+
+                this.WaitQueryStateFinished(qh, sw);
+
+                var result = new QueryResult<bool>();
+                result.Result = true;
+
+                var profile = this.service.GetRuntimeProfile(qh);
+                result.RuntimeProfile = profile;
+                result.Result = true;
+                result.ElapsedTime = sw.Elapsed;
+
+                return result;
+            }
+        }
+
         /// <summary>
         /// Wait until query state became FINISHED.
         /// 
@@ -275,6 +301,15 @@ namespace ImpalaSharp
             query.Query_string = q;
             query.Configuration = conf.Select(e => e.Key + "=" + e.Value).ToList();
             var qh = this.service.query(query);
+            return new QueryHandleWrapper(this.service, qh);
+        }
+
+        private QueryHandleWrapper CreateExecuteHandle(string q, Dictionary<string, string> conf)
+        {
+            var query = new Query();
+            query.Query_string = q;
+            query.Configuration = conf.Select(e => e.Key + "=" + e.Value).ToList();
+            var qh = this.service.executeAndWait(query, null);
             return new QueryHandleWrapper(this.service, qh);
         }
 
